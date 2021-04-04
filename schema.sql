@@ -1,0 +1,1 @@
+CREATE TABLE IF NOT EXISTS details (search_query TEXT,formatted_query TEXT,latitude TEXT,longitude TEXT);

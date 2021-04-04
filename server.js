@@ -1,14 +1,24 @@
 'use strict';
 // env data
 require('dotenv').config();
-const PORT =process.env.PORT;
 
+
+//---------------------- Env var -------------------------------
+// Port
+const PORT =process.env.PORT;
 // https://www.nps.gov/
 const GEO_CODE_API_KEY = process.env.GEO_CODE_API_KEY;
 // https://www.weatherbit.io/
 const API_KEY_WEATHER = process.env.API_KEY_WEATHER;
 // https://my.locationiq.com/
 const API_KEY_LOCATION = process.env.API_KEY_LOCATION;
+// DataBase Url
+const DATABASE_URL=process.env.DATABASE_URL;
+//------------------------------------------------------------
+
+// DataBase connection
+const pg=require('pg');
+const client = new pg.Client(DATABASE_URL);
 
 
 let all_data = [];
@@ -32,33 +42,97 @@ app.use(cors());
 
 // Expected requests
 
+app.get('/', nothing_fun);
 app.get('/location', locationHandler);
 app.get('/weather', weatherHandler);
 app.get('/parks', parksHandler);
+
 app.use('*', notFoundHandler);
 
 // Handler functions
 // location
+
 function locationHandler(req, res) {
   city = req.query.city;
-  const helper_url = `https://us1.locationiq.com/v1/search.php?key=${API_KEY_LOCATION}&city=${city}&format=json`;
-
   if(!city){
     res.status(404).send('No values entered');
   }else{
-    superagent.get(helper_url).then(data=>{
-      const city_data = new LocationData(data.body);
+    creat_table(city,res);
+  }
+}
 
+function creat_table(city,res){
+  const sqlQuery =`CREATE TABLE IF NOT EXISTS details (search_query TEXT,formatted_query TEXT,latitude TEXT,longitude TEXT);`;
+  client.query(sqlQuery).then(
+    check_city(city,res)
+  ).catch(error => {
+    console.log(error);
+    res.status(500).send('Internal server error - IN SQL DB');
+  });
+}
+
+function check_city(city,res){
+  const sqlQuery =`SELECT * FROM details;`;
+  client.query(sqlQuery).then(result => {
+    //res.status(200).send(result.rows);
+    let check = false;
+    let old_data;
+    result.rows.forEach(item=>{
+      if(item.search_query==city){
+        old_data=item;
+        check=true;
+      }
+    })
+    if(check){
+      old_city(old_data,res)
+    }else{
+      get_data_from_api(city,res)
+    }
+    
+  }).catch(error => {
+    console.log(error);
+    res.status(500).send('error - when select tables data');
+  });
+}
+
+function old_city(city_data,res){
+      // save city data
       city=city_data.search_query;
       lon=city_data.longitude;
       lat=city_data.latitude;
 
-      res.status(200).send(city_data);
-    }).catch(error=>{
-      res.status(500).send(error);
-    });
-  }
+  res.status(200).json(city_data);
 }
+
+
+function get_data_from_api(city,res){
+  const helper_url = `https://us1.locationiq.com/v1/search.php?key=${API_KEY_LOCATION}&city=${city}&format=json`;
+  superagent.get(helper_url).then(data=>{
+    const city_data = new LocationData(data.body,city);
+
+    // save city data
+    city=city_data.search_query;
+    lon=city_data.longitude;
+    lat=city_data.latitude;
+
+    save_new_city_in_database(city_data,res)
+  }).catch(error=>{
+    res.status(500).send(error);
+  })
+}
+
+function save_new_city_in_database(city_data,res){
+  const safeValues = [city_data.search_query,city_data.formatted_query,city_data.latitude,city_data.longitude];
+  const sqlQuery = `INSERT INTO details(search_query,formatted_query,latitude,longitude) VALUES( $1, $2, $3, $4 )`;
+  
+
+  client.query(sqlQuery,safeValues).then(result=>{
+    res.status(200).json(city_data)
+  }).catch(error=>{
+    res.status(500).send('error--->*');
+  })
+}
+
 
 // weather
 function weatherHandler(req, res) {
@@ -103,11 +177,17 @@ function parksHandler(req, res) {
   }
 }
 
+// Nothing
+
+function nothing_fun (req,res){
+  res.status(200).send('nothing!!');
+}
+
 // Constructors
 
 // location
-function LocationData(data_results){
-  this.search_query = data_results[0].display_name.split(',')[0];
+function LocationData(data_results,search_query){
+  this.search_query = search_query;
   this.formatted_query = data_results[0].display_name;
   this.latitude = data_results[0].lat;
   this.longitude = data_results[0].lon;
@@ -131,5 +211,13 @@ function ParksData(data){
 function notFoundHandler(req, res) {
   res.status(404).send('you sent Invalid request!!');
 }
+// open Server Port
+// open Database Port before
 
-app.listen(PORT, () => console.log('hello-2'));
+client.connect().then(()=>{
+  app.listen(PORT, () =>{
+    console.log("Connected to database:", client.connectionParameters.database); //show what database we connected to
+    console.log('DataBase & server are ready');
+  });
+});
+
