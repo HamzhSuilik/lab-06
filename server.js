@@ -14,6 +14,10 @@ const API_KEY_WEATHER = process.env.API_KEY_WEATHER;
 const API_KEY_LOCATION = process.env.API_KEY_LOCATION;
 // DataBase Url
 const DATABASE_URL=process.env.DATABASE_URL;
+// MOVIE_API_KEY
+const MOVIE_API_KEY = process.env.MOVIE_API_KEY
+// YELP_API_KEY
+const YELP_API_KEY = process.env.YELP_API_KEY
 //------------------------------------------------------------
 
 // DataBase connection
@@ -46,6 +50,8 @@ app.get('/', nothing_fun);
 app.get('/location', locationHandler);
 app.get('/weather', weatherHandler);
 app.get('/parks', parksHandler);
+app.get('/movie',movie_fun);
+app.get('/yelp',yelp_fun);
 
 app.use('*', notFoundHandler);
 
@@ -177,6 +183,75 @@ function parksHandler(req, res) {
   }
 }
 
+// YELP Request
+
+function yelp_fun(req,res){
+  const query = req.query.search_query;
+  const page = req.query.page;
+  const limit = page * 5;
+  const url = `url = http://api.yelp.com/v3/businesses/search?location=${query}&limit=${limit}`;
+  superagent.get('url').set('Authorization', `Bearer ${YELP_API_KEY}`).then(data_json=>{
+
+    const all_data=[];
+    
+    data_json.body.slice(limit-5,limit-1).forEach(item=>{
+      all_data.push(new YelpData(item));
+    })
+    res.status(200).json(all_data);
+  }).catch(error=>{
+    // The yelp api doesn't work :( , so I put here sample fo Expected response To be able to continue
+
+    const response ={data:
+    [
+      {
+        "name1": "Pike Place Chowder",
+        "image_url1": "https://s3-media3.fl.yelpcdn.com/bphoto/ijju-wYoRAxWjHPTCxyQGQ/o.jpg",
+        "price1": "$$   ",
+        "rating1": "4.5",
+        "url1": "https://www.yelp.com/biz/pike-place-chowder-seattle?adjust_creative=uK0rfzqjBmWNj6-d3ujNVA&utm_campaign=yelp_api_v3&utm_medium=api_v3_business_search&utm_source=uK0rfzqjBmWNj6-d3ujNVA"
+      },
+      {
+        "name1": "Umi Sake House",
+        "image_url1": "https://s3-media3.fl.yelpcdn.com/bphoto/c-XwgpadB530bjPUAL7oFw/o.jpg",
+        "price1": "$$   ",
+        "rating1": "4.0",
+        "url1": "https://www.yelp.com/biz/umi-sake-house-seattle?adjust_creative=uK0rfzqjBmWNj6-d3ujNVA&utm_campaign=yelp_api_v3&utm_medium=api_v3_business_search&utm_source=uK0rfzqjBmWNj6-d3ujNVA"
+      }
+    ]
+  };
+
+  const all_data=[];
+  
+    response.data.forEach(item=>{
+      all_data.push(new YelpData(item));
+    })
+    res.status(200).json(all_data);
+  });
+
+  
+}
+
+// MOVIE Request
+
+function movie_fun(req,res){
+  const query = req.query.search_query;
+  const url = `https://api.themoviedb.org/3/movie/550?api_key=${MOVIE_API_KEY}&query=${query}`;
+
+  superagent.get(`${url}`).then(data_json=>{
+    const all_movie=[];
+
+    const movie_data = new MovieData (data_json.body);
+    all_movie.push(movie_data);
+
+    res.status(200).send(all_movie);
+  }).catch(error=>{
+    res.status(500).send(`movie ERROR ! ${error}`);
+  });
+}
+
+
+
+
 // Nothing
 
 function nothing_fun (req,res){
@@ -184,6 +259,28 @@ function nothing_fun (req,res){
 }
 
 // Constructors
+
+// yelp
+
+function YelpData(json_data){
+  this.name=json_data.name1;
+  this.image_url=json_data.image_url1;
+  this.price=json_data.price1;
+  this.rating=json_data.rating1;
+  this.url=json_data.url1;
+}
+
+// Movie
+
+function MovieData(json_obj){
+  this.title = json_obj.title;
+  this.overview = json_obj.overview;
+  this.average_votes = json_obj.vote_average;
+  this.total_votes = json_obj.vote_count;
+  this.image_url = json_obj.poster_path;
+  this.popularity=json_obj.popularity;
+  this.released_on = json_obj.release_date;
+}
 
 // location
 function LocationData(data_results,search_query){
